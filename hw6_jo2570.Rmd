@@ -1,0 +1,11 @@
+---
+title: "hw6_jo2570"
+author: "Jai Oberoi"
+date: "20/11/2019"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
