@@ -7,5 +7,54 @@ output: github_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
 ```
 
+Load and clean birthweight data: 
+```{r}
+bw_data = read_csv("./data/birthweight.csv") %>% 
+  janitor::clean_names() %>%
+  mutate(babysex = factor(babysex, levels = c("1", "2"), labels = c("male", "female")),
+         frace = factor(frace, levels = c("1", "2", "3", "4", "8", "9"), labels = c("white", "black", "asian", "puerto rican", "other", "unknown")),
+         malform = factor(malform, levels = c("0", "1"), labels = c("absent", "present")),
+         mrace = factor(mrace, levels = c("1", "2", "3", "4", "8"), labels = c("white", "black", "asian", "puerto rican", "other"))
+         )
+```
+
+Fitting a regression model for birthweight:
+
+We fit a regression model for baby birthweight using the hypothesis that test how characteristics of the baby affect its birthweight. We fit a model with the main predictors baby characteristics and adjust for mother characteristics thay may affect her health and health of the baby. We want to keep the model parsimonious, ensure no 2 predictor variables measure the same characteristic and/or are very closely associated with each other. 
+
+```{r}
+fit_1 = lm(bwt ~ babysex + bhead + blength + gaweeks + momage + ppbmi + smoken + malform, data = bw_data) 
+
+fit_1 %>% 
+  broom::tidy()
+
+fit_1 %>% 
+  broom::glance()
+```
+
+For the inclusion criteria for the final model, we recognize variables that meet the 95% level of significance (p-value < 0.05)
+
+```{r}
+fit_final = lm(bwt ~ babysex + bhead + blength + gaweeks + momage + ppbmi + smoken, data = bw_data) 
+
+fit_final %>% 
+  broom::tidy()
+
+fit_final %>% 
+  broom::glance()
+
+modelr::add_residuals(bw_data, fit_final)
+
+modelr::add_predictions(bw_data, fit_final)
+```
+
+Plotting residuals agaist predticted values based on the model fit_final: 
+```{r}
+bw_data %>% 
+  modelr::add_residuals(fit_final) %>% 
+  modelr::add_predictions(fit_final) %>% 
+  ggplot(aes(x = pred , y = resid)) + geom_point()
+```
