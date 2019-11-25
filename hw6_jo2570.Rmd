@@ -8,6 +8,9 @@ output: github_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(modelr)
+library(mgcv)
+library(purrr)
 ```
 
 Load and clean birthweight data: 
@@ -26,29 +29,29 @@ Fitting a regression model for birthweight:
 We fit a regression model for baby birthweight using the hypothesis that test how characteristics of the baby affect its birthweight. We fit a model with the main predictors baby characteristics and adjust for mother characteristics thay may affect her health and health of the baby. We want to keep the model parsimonious, ensure no 2 predictor variables measure the same characteristic and/or are very closely associated with each other. 
 
 ```{r}
-fit_1 = lm(bwt ~ babysex + bhead + blength + gaweeks + momage + ppbmi + smoken + malform, data = bw_data) 
+fit = lm(bwt ~ babysex + bhead + blength + gaweeks + momage + ppbmi + smoken + malform, data = bw_data) 
 
-fit_1 %>% 
-  broom::tidy()
+fit %>% 
+  broom::tidy() %>% 
+  knitr::kable()
 
-fit_1 %>% 
-  broom::glance()
+fit %>% 
+  broom::glance() %>% 
+  knitr::kable()
 ```
 
-For the inclusion criteria for the final model, we recognize variables that meet the 95% level of significance (p-value < 0.05)
+For the inclusion criteria for the final model, we recognize variables that meet the 95% level of significance (p-value < 0.05). We exclude malform from the final model. 
 
 ```{r}
 fit_final = lm(bwt ~ babysex + bhead + blength + gaweeks + momage + ppbmi + smoken, data = bw_data) 
 
 fit_final %>% 
-  broom::tidy()
+  broom::tidy() %>% 
+  knitr::kable()
 
 fit_final %>% 
-  broom::glance()
-
-modelr::add_residuals(bw_data, fit_final)
-
-modelr::add_predictions(bw_data, fit_final)
+  broom::glance() %>% 
+  knitr::kable()
 ```
 
 Plotting residuals agaist predticted values based on the model fit_final: 
@@ -56,5 +59,136 @@ Plotting residuals agaist predticted values based on the model fit_final:
 bw_data %>% 
   modelr::add_residuals(fit_final) %>% 
   modelr::add_predictions(fit_final) %>% 
-  ggplot(aes(x = pred , y = resid)) + geom_point()
+  ggplot(aes(x = pred , y = resid)) + 
+  geom_point(alpha = 0.5, color = "blue") + geom_hline(yintercept = 0, color = "red") + 
+  labs(title = "Residuals by Predicted Value of Birthweight", 
+       x = "Predicted birthweight (grams)", 
+       y = "Residuals") + 
+  theme_set(theme_minimal() + theme())
 ```
+
+Comparing models: 
+
+Creating model 1:
+```{r}
+fit_1 = lm(bwt ~ blength + gaweeks, data = bw_data)
+
+fit_1 %>% 
+  broom::tidy() %>% 
+  knitr::kable()
+
+fit_1 %>% 
+  broom::glance() %>%  
+  knitr::kable()
+```
+
+Creatiing model 2: 
+```{r}
+fit_2 = lm( bwt ~ babysex + bhead + blength + babysex*bhead + babysex*blength + bhead*blength + babysex*bhead*blength, data = bw_data)
+
+fit_2 %>% 
+  broom::tidy() %>%  
+  knitr::kable()
+
+fit_2 %>% 
+  broom::glance() %>% 
+  knitr::kable()
+```
+
+Cross validation:
+```{r}
+cv_df = 
+  crossv_mc(bw_data, 100) %>% 
+  mutate(train = map(train, as_tibble),
+         test = map(test, as_tibble)
+         ) %>% 
+  mutate(fit_final = map(train, ~lm(bwt ~ babysex + bhead + blength + gaweeks + momage + ppbmi + smoken, data = .x)), 
+         fit_1 = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+         fit_2 = map(train, ~lm( bwt ~ babysex + bhead + blength + babysex*bhead + babysex*blength + bhead*blength + babysex*bhead*blength, data = .x))) %>%
+  mutate(rmse_1 = map2_dbl(fit_final, test, ~rmse(model = .x, data = .y)),
+         rmse_2 = map2_dbl(fit_1, test, ~rmse(model = .x, data = .y)),
+         rmse_3 = map2_dbl(fit_2, test, ~rmse(model = .x, data = .y)))
+
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse, fill = model, alpha = 0.5)) + geom_violin() +
+    labs(
+    title = "Comparing Models",
+    x = "Model",
+    y = "Root Mean Sq. Error"
+   )
+```
+
+
+Problem 2: 
+
+Import and clean datset: 
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+Generating 5000 bootstrap samples:
+```{r}
+boot_sample = function(df) {
+  sample_frac(df, replace = TRUE)
+}
+
+boot_straps = 
+  tibble(
+    strap_number = 1:5000,
+    strap_sample = rerun(5000, boot_sample(weather_df))
+  )
+```
+
+Estimating Log(B0*B1): 
+```{r}
+bootstrap_results =
+  boot_straps %>% 
+  mutate(
+    models = map(strap_sample, ~lm(tmax ~ tmin, data=.x)),
+    results = map(models, broom::tidy)) %>% 
+  select(-strap_sample, -models) %>% 
+  unnest(cols = c(results)) %>% 
+  select(strap_number, term, estimate) %>% 
+  pivot_wider(
+    names_from = "term",
+    values_from = "estimate"
+  ) %>% 
+  janitor::clean_names() %>% 
+  mutate(log = log(intercept*tmin)) %>% 
+  select(strap_number, log)
+```
+
+Estimating R sq. : 
+```{r}
+bootstrap_results_2 =
+  boot_straps %>% 
+  mutate(
+    models = map(strap_sample, ~lm(tmax ~ tmin, data=.x)),
+    results = map(models, broom::glance)) %>% 
+  select(-strap_sample, -models) %>% 
+  unnest(cols = c(results)) %>% 
+  select(strap_number, r.squared, adj.r.squared)
+```
+
+
+
+
+
+
