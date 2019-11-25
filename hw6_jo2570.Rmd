@@ -24,9 +24,18 @@ bw_data = read_csv("./data/birthweight.csv") %>%
          )
 ```
 
+Checking for missing data:
+```{r}
+filter_all(
+  bw_data, any_vars(is.na(.))
+)
+```
+No missing values are present. 
+
+
 Fitting a regression model for birthweight:
 
-We fit a regression model for baby birthweight using the hypothesis that test how characteristics of the baby affect its birthweight. We fit a model with the main predictors baby characteristics and adjust for mother characteristics thay may affect her health and health of the baby. We want to keep the model parsimonious, ensure no 2 predictor variables measure the same characteristic and/or are very closely associated with each other. 
+We fit a regression model for baby birthweight using the hypothesis that test how characteristics of the baby affect its birthweight. We fit a model with the main predictors being baby characteristics and adjust for some mother characteristics thay may affect her health and health of the baby. We want to keep the model parsimonious, ensure no 2 predictor variables measure the same characteristic and/or are very closely associated with each other. 
 
 ```{r}
 fit = lm(bwt ~ babysex + bhead + blength + gaweeks + momage + ppbmi + smoken + malform, data = bw_data) 
@@ -125,6 +134,8 @@ cv_df %>%
    )
 ```
 
+From the violin plot above we see that model fit_final (model 1) has smallest root mean standard error and is thus the best model for predicting birthweight in this dataset. 
+
 
 Problem 2: 
 
@@ -173,6 +184,8 @@ bootstrap_results =
   janitor::clean_names() %>% 
   mutate(log = log(intercept*tmin)) %>% 
   select(strap_number, log)
+
+bootstrap_results
 ```
 
 Estimating R sq. : 
@@ -185,10 +198,55 @@ bootstrap_results_2 =
   select(-strap_sample, -models) %>% 
   unnest(cols = c(results)) %>% 
   select(strap_number, r.squared, adj.r.squared)
+
+bootstrap_results_2
 ```
 
+PLotting the distribution of log(B0*B1) and R-Squared estimates: 
+```{r}
+plot_1 =
+  ggplot(
+    data = bootstrap_results, 
+    aes(x = log, color = "orange")) +
+  geom_histogram() + 
+  labs(
+    title = "Distribution of Estimates for Log(B0*B1)",
+    x = "Log B0*B1",
+    y = "Count"
+    ) 
+
+plot_1
 
 
+plot_2 = 
+  ggplot(data = bootstrap_results_2, 
+         aes(x = r.squared, color = "orange")) + 
+  geom_histogram() + 
+  labs(
+    title = "Distribution of Estimates for R sq.",
+    x = "R-Squared",
+    y = "Count"
+    ) 
 
+plot_2
+```
+
+According to the plots above it appears the distrubution of both log(B0*B1) and R-Squared estimates are aproximately normal. 
+
+
+Identifing the 2.5% and 97.5% quantiles to provide a 95% confidence interval for log(B0*B1) and R-Squared estimates: 
+```{r}
+bootstrap_results %>% 
+  pull(log) %>% 
+quantile(., probs = c(0.025, 0.975), na.rm = TRUE)
+```
+
+```{r}
+bootstrap_results_2 %>% 
+  pull(r.squared) %>% 
+quantile(., probs = c(0.025, 0.975), na.rm = TRUE)
+```
+
+The 95% CI for log(b0*b1) = (1.966, 2.059) and the 95% confidence interval for R-squared = (0.894, 0.927) 
 
 
